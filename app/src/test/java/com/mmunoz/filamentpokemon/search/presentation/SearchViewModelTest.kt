@@ -16,10 +16,12 @@ import com.mmunoz.filamentpokemon.core.domain.util.Result
 import com.mmunoz.filamentpokemon.core.presentation.util.UiText
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource.Companion.model
-import com.mmunoz.filamentpokemon.search.domain.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.preferences.FakeUserPreferences
 import com.mmunoz.filamentpokemon.search.domain.SearchPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -34,11 +36,13 @@ class SearchViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var dataSource: FakeSketchfabModelDataSource
+    private lateinit var userPreferences: FakeUserPreferences
 
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         dataSource = FakeSketchfabModelDataSource()
+        userPreferences = FakeUserPreferences()
     }
 
     @AfterEach
@@ -47,7 +51,7 @@ class SearchViewModelTest {
     }
 
     private fun viewModel(savedState: SavedStateHandle = SavedStateHandle()) =
-        SearchViewModel(savedState, dataSource)
+        SearchViewModel(savedState, dataSource, userPreferences)
 
     private fun page(vararg uids: String, next: String? = null) =
         Result.Success(SearchPage(uids.map { model(it) }, next))
@@ -196,5 +200,67 @@ class SearchViewModelTest {
 
         assertThat(vm.state.value.query).isEqualTo("")
         assertThat(dataSource.searchCalls.map { it.query }).containsExactly("")
+    }
+
+    @Test
+    fun `stored budget is used for the initial search and shown in state`() = runTest {
+        userPreferences = FakeUserPreferences(initial = 12_000)
+        val vm = viewModel()
+        advanceTimeBy(401)
+
+        assertThat(vm.state.value.maxFaceCount).isEqualTo(12_000)
+        assertThat(dataSource.searchCalls.single().maxFaceCount).isEqualTo(12_000)
+    }
+
+    @Test
+    fun `dragging the slider only updates the label until the drag finishes`() = runTest {
+        dataSource.pageQueue += page("a")
+        val vm = viewModel()
+        advanceTimeBy(401)
+        dataSource.searchCalls.clear()
+
+        vm.onAction(SearchAction.OnMaxFaceCountChange(10_000))
+        assertThat(vm.state.value.maxFaceCount).isEqualTo(10_000)
+        assertThat(dataSource.searchCalls).hasSize(0)
+
+        vm.onAction(SearchAction.OnMaxFaceCountChangeFinished)
+        advanceTimeBy(1)
+
+        assertThat(dataSource.searchCalls.single().maxFaceCount).isEqualTo(10_000)
+        assertThat(userPreferences.maxFaceCount.first()).isEqualTo(10_000)
+    }
+
+    @Test
+    fun `budget usage of results is relative to the new threshold`() = runTest {
+        dataSource.pageQueue += Result.Success(SearchPage(listOf(model("a", faceCount = 9_000)), null))
+        dataSource.pageQueue += Result.Success(SearchPage(listOf(model("a", faceCount = 9_000)), null))
+        val vm = viewModel()
+        advanceTimeBy(401)
+        assertThat(vm.state.value.models.single().budgetUsage).isEqualTo(9_000f / 30_000f)
+
+        vm.onAction(SearchAction.OnMaxFaceCountChange(10_000))
+        vm.onAction(SearchAction.OnMaxFaceCountChangeFinished)
+        advanceTimeBy(1)
+
+        assertThat(vm.state.value.models.single().budgetUsage).isEqualTo(0.9f)
+    }
+
+    @Test
+    fun `slider values are clamped to the allowed range`() = runTest {
+        val vm = viewModel()
+        vm.onAction(SearchAction.OnMaxFaceCountChange(1))
+        assertThat(vm.state.value.maxFaceCount).isEqualTo(PolygonBudget.MIN_FACES)
+        vm.onAction(SearchAction.OnMaxFaceCountChange(1_000_000))
+        assertThat(vm.state.value.maxFaceCount).isEqualTo(PolygonBudget.MAX_FACES)
+    }
+
+    @Test
+    fun `budget sheet visibility toggles`() = runTest {
+        val vm = viewModel()
+        assertThat(vm.state.value.isBudgetSheetVisible).isFalse()
+        vm.onAction(SearchAction.OnOpenBudgetSheet)
+        assertThat(vm.state.value.isBudgetSheetVisible).isTrue()
+        vm.onAction(SearchAction.OnDismissBudgetSheet)
+        assertThat(vm.state.value.isBudgetSheetVisible).isFalse()
     }
 }

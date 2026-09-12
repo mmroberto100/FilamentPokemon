@@ -7,8 +7,8 @@ import assertk.assertions.isNotNull
 import assertk.assertions.isTrue
 import com.mmunoz.filamentpokemon.core.data.networking.HttpClientFactory
 import com.mmunoz.filamentpokemon.core.domain.util.Result
-import com.mmunoz.filamentpokemon.search.domain.PolygonBudget
-import com.mmunoz.filamentpokemon.search.domain.fitsBudget
+import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.model.fitsBudget
 import com.mmunoz.filamentpokemon.core.data.networking.OkHttpEngineFactory
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test

@@ -1,6 +1,6 @@
 package com.mmunoz.filamentpokemon.search.presentation.mappers
 
-import com.mmunoz.filamentpokemon.search.domain.PokemonModel
+import com.mmunoz.filamentpokemon.core.domain.model.PokemonModel
 import com.mmunoz.filamentpokemon.search.presentation.PokemonModelUi
 import java.text.NumberFormat
 

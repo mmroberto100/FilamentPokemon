@@ -7,4 +7,11 @@ sealed interface SearchAction {
     data object OnLoadMore : SearchAction
     data object OnRetry : SearchAction
     data class OnModelClick(val uid: String) : SearchAction
+
+    data object OnOpenBudgetSheet : SearchAction
+    data object OnDismissBudgetSheet : SearchAction
+    /** Live slider value while dragging – updates the label only. */
+    data class OnMaxFaceCountChange(val value: Int) : SearchAction
+    /** Drag finished – persist the budget; the new value re-runs the search. */
+    data object OnMaxFaceCountChangeFinished : SearchAction
 }

@@ -8,10 +8,10 @@ import com.mmunoz.filamentpokemon.search.data.dto.ModelDto
 import com.mmunoz.filamentpokemon.search.data.dto.SearchResponseDto
 import com.mmunoz.filamentpokemon.search.data.mappers.toPokemonModel
 import com.mmunoz.filamentpokemon.search.data.mappers.toSearchPage
-import com.mmunoz.filamentpokemon.search.domain.PokemonModel
+import com.mmunoz.filamentpokemon.core.domain.model.PokemonModel
 import com.mmunoz.filamentpokemon.search.domain.SearchPage
 import com.mmunoz.filamentpokemon.search.domain.SketchfabModelDataSource
-import com.mmunoz.filamentpokemon.search.domain.fitsBudget
+import com.mmunoz.filamentpokemon.core.domain.model.fitsBudget
 import io.ktor.client.HttpClient
 
 class KtorSketchfabModelDataSource(

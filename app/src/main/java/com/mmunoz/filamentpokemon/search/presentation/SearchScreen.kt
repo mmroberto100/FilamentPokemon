@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmunoz.filamentpokemon.R
 import com.mmunoz.filamentpokemon.core.presentation.util.ObserveAsEvents
 import com.mmunoz.filamentpokemon.core.presentation.util.UiText
+import com.mmunoz.filamentpokemon.search.presentation.components.BudgetSheet
 import com.mmunoz.filamentpokemon.search.presentation.components.ModelCard
 import com.mmunoz.filamentpokemon.ui.theme.FilamentPokemonTheme
 import kotlinx.coroutines.launch
@@ -93,8 +95,26 @@ fun SearchScreen(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
 
+    if (state.isBudgetSheetVisible) {
+        BudgetSheet(
+            maxFaceCount = state.maxFaceCount,
+            onMaxFaceCountChange = { onAction(SearchAction.OnMaxFaceCountChange(it)) },
+            onMaxFaceCountChangeFinished = { onAction(SearchAction.OnMaxFaceCountChangeFinished) },
+            onDismiss = { onAction(SearchAction.OnDismissBudgetSheet) }
+        )
+    }
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.search_title)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.search_title)) },
+                actions = {
+                    IconButton(onClick = { onAction(SearchAction.OnOpenBudgetSheet) }) {
+                        Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.cd_budget_settings))
+                    }
+                }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(

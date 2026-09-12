@@ -13,6 +13,17 @@
     <string name="cd_clear_query">Clear search</string>
     <string name="cd_model_thumbnail">Preview of %1$s</string>
     <string name="cd_animated">This model is animated</string>
+    <string name="cd_budget_settings">Triangle budget settings</string>
+
+    <!-- Budget sheet -->
+    <string name="budget_sheet_title">Triangle budget</string>
+    <string name="budget_sheet_value">%1$s faces</string>
+    <string name="budget_sheet_explanation">Models above this face count are skipped before download so rendering stays smooth on mobile GPUs. 30,000 is a safe default; go higher only on recent devices.</string>
+    <string name="budget_sheet_range">%1$s – %2$s</string>
+
+    <!-- Viewer (placeholder until Step 7/8) -->
+    <string name="viewer_placeholder">3D viewer arrives in the next steps.\nModel: %1$s</string>
+    <string name="cd_navigate_back">Back</string>
 
     <!-- Network errors -->
     <string name="error_no_internet">No internet connection. Check your network and try again.</string>

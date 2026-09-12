@@ -1,4 +1,4 @@
-package com.mmunoz.filamentpokemon.search.domain
+package com.mmunoz.filamentpokemon.core.domain.model
 
 import assertk.assertThat
 import assertk.assertions.isEqualTo

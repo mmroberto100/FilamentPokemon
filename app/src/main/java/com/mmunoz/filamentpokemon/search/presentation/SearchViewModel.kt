@@ -6,7 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.mmunoz.filamentpokemon.core.domain.util.onFailure
 import com.mmunoz.filamentpokemon.core.domain.util.onSuccess
 import com.mmunoz.filamentpokemon.core.presentation.util.toUiText
-import com.mmunoz.filamentpokemon.search.domain.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.preferences.UserPreferences
 import com.mmunoz.filamentpokemon.search.domain.SketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.presentation.mappers.toUi
 import kotlinx.coroutines.FlowPreview
@@ -26,7 +27,8 @@ import kotlinx.coroutines.launch
 @OptIn(FlowPreview::class)
 class SearchViewModel(
     private val savedStateHandle: SavedStateHandle,
-    private val modelDataSource: SketchfabModelDataSource
+    private val modelDataSource: SketchfabModelDataSource,
+    private val userPreferences: UserPreferences
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -40,8 +42,9 @@ class SearchViewModel(
     /** Typed query, debounced before it hits the network. */
     private val queryInput = MutableStateFlow(_state.value.query)
 
-    /** Face budget the search is filtered by (Step 5 feeds this from DataStore). */
-    private val maxFaceCount = MutableStateFlow(PolygonBudget.DEFAULT_MAX_FACES)
+    /** Persisted face budget; every emission (initial or user change) re-runs the search. */
+    private val maxFaceCount = userPreferences.maxFaceCount
+        .onEach { budget -> _state.update { it.copy(maxFaceCount = budget) } }
 
     private var searchJob: Job? = null
 
@@ -68,7 +71,7 @@ class SearchViewModel(
             // Bypass the debounce: search immediately with the current input.
             SearchAction.OnSearchSubmit,
             SearchAction.OnRetry -> startNewSearch(
-                SearchParams(_state.value.query.trim(), maxFaceCount.value)
+                SearchParams(_state.value.query.trim(), _state.value.maxFaceCount)
             )
 
             SearchAction.OnLoadMore -> loadNextPage()
@@ -78,6 +81,17 @@ class SearchViewModel(
                 viewModelScope.launch {
                     _events.send(SearchEvent.NavigateToViewer(model.uid, model.name))
                 }
+            }
+
+            SearchAction.OnOpenBudgetSheet -> _state.update { it.copy(isBudgetSheetVisible = true) }
+            SearchAction.OnDismissBudgetSheet -> _state.update { it.copy(isBudgetSheetVisible = false) }
+
+            is SearchAction.OnMaxFaceCountChange -> _state.update {
+                it.copy(maxFaceCount = PolygonBudget.clamp(action.value))
+            }
+
+            SearchAction.OnMaxFaceCountChangeFinished -> viewModelScope.launch {
+                userPreferences.setMaxFaceCount(_state.value.maxFaceCount)
             }
         }
     }
