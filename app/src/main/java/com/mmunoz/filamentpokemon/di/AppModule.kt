@@ -12,13 +12,17 @@ import com.mmunoz.filamentpokemon.core.domain.preferences.UserPreferences
 import com.mmunoz.filamentpokemon.search.data.KtorSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.SketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.presentation.SearchViewModel
+import com.mmunoz.filamentpokemon.viewer.data.KtorGlbDownloader
+import com.mmunoz.filamentpokemon.viewer.data.ModelCacheManager
+import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
+import com.mmunoz.filamentpokemon.viewer.domain.ModelCache
 import io.ktor.client.HttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
-val IMAGE_HTTP_CLIENT = named("images")
+val UNAUTHENTICATED_HTTP_CLIENT = named("unauthenticated")
 
 val appModule = module {
     /** Authenticated client for api.sketchfab.com. */
@@ -30,14 +34,17 @@ val appModule = module {
         )
     }
 
-    /** Unauthenticated client for thumbnails – the API token must never reach the media CDN. */
-    single<HttpClient>(IMAGE_HTTP_CLIENT) {
+    /**
+     * Unauthenticated client for thumbnails and S3 model downloads – the API token must never
+     * reach the media CDN, and S3 rejects pre-signed URLs that also carry an Authorization header.
+     */
+    single<HttpClient>(UNAUTHENTICATED_HTTP_CLIENT) {
         HttpClientFactory.create(engine = OkHttpEngineFactory.create(), apiToken = "")
     }
 
     single<ImageLoader> {
         ImageLoader.Builder(androidContext())
-            .components { add(KtorNetworkFetcherFactory(get<HttpClient>(IMAGE_HTTP_CLIENT))) }
+            .components { add(KtorNetworkFetcherFactory(get<HttpClient>(UNAUTHENTICATED_HTTP_CLIENT))) }
             .crossfade(true)
             .build()
     }
@@ -48,4 +55,10 @@ val appModule = module {
     // Search
     single<SketchfabModelDataSource> { KtorSketchfabModelDataSource(get()) }
     viewModelOf(::SearchViewModel)
+
+    // Viewer: temporary .glb storage strictly under context.cacheDir
+    single<ModelCache> { ModelCacheManager(cacheDir = androidContext().cacheDir) }
+    single<GlbDownloader> {
+        KtorGlbDownloader(apiClient = get(), downloadClient = get(UNAUTHENTICATED_HTTP_CLIENT))
+    }
 }
