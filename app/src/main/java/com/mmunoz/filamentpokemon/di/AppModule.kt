@@ -6,6 +6,9 @@ import coil3.request.crossfade
 import com.mmunoz.filamentpokemon.BuildConfig
 import com.mmunoz.filamentpokemon.core.data.networking.HttpClientFactory
 import com.mmunoz.filamentpokemon.core.data.networking.OkHttpEngineFactory
+import com.mmunoz.filamentpokemon.core.data.preferences.DataStoreUserPreferences
+import com.mmunoz.filamentpokemon.core.data.preferences.userPreferencesDataStore
+import com.mmunoz.filamentpokemon.core.domain.preferences.UserPreferences
 import com.mmunoz.filamentpokemon.search.data.KtorSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.SketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.presentation.SearchViewModel
@@ -38,6 +41,9 @@ val appModule = module {
             .crossfade(true)
             .build()
     }
+
+    // Preferences
+    single<UserPreferences> { DataStoreUserPreferences(androidContext().userPreferencesDataStore) }
 
     // Search
     single<SketchfabModelDataSource> { KtorSketchfabModelDataSource(get()) }

@@ -1,4 +1,4 @@
-package com.mmunoz.filamentpokemon.search.domain
+package com.mmunoz.filamentpokemon.core.domain.model
 
 /**
  * Mobile GPU safety thresholds (see CLAUDE.md). Models above the face budget are never

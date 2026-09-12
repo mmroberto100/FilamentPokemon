@@ -1,5 +1,6 @@
 package com.mmunoz.filamentpokemon.search.domain
 
+import com.mmunoz.filamentpokemon.core.domain.model.PokemonModel
 import com.mmunoz.filamentpokemon.core.domain.util.DataError
 import com.mmunoz.filamentpokemon.core.domain.util.Result
 

@@ -4,8 +4,8 @@ import com.mmunoz.filamentpokemon.search.data.dto.ArchiveInfoDto
 import com.mmunoz.filamentpokemon.search.data.dto.ImageDto
 import com.mmunoz.filamentpokemon.search.data.dto.ModelDto
 import com.mmunoz.filamentpokemon.search.data.dto.SearchResponseDto
-import com.mmunoz.filamentpokemon.search.domain.GlbArchive
-import com.mmunoz.filamentpokemon.search.domain.PokemonModel
+import com.mmunoz.filamentpokemon.core.domain.model.GlbArchive
+import com.mmunoz.filamentpokemon.core.domain.model.PokemonModel
 import com.mmunoz.filamentpokemon.search.domain.SearchPage
 
 /** Grid cards are ~half the screen wide; 720 px is the smallest Sketchfab size that stays sharp. */

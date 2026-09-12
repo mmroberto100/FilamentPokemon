@@ -1,4 +1,4 @@
-package com.mmunoz.filamentpokemon.search.domain
+package com.mmunoz.filamentpokemon.core.domain.model
 
 /** A Sketchfab 3D model that passed the Pokémon + downloadable filters. */
 data class PokemonModel(

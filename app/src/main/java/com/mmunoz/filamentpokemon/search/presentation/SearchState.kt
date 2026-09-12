@@ -2,7 +2,7 @@ package com.mmunoz.filamentpokemon.search.presentation
 
 import androidx.compose.runtime.Stable
 import com.mmunoz.filamentpokemon.core.presentation.util.UiText
-import com.mmunoz.filamentpokemon.search.domain.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
 
 @Stable
 data class SearchState(
@@ -13,7 +13,8 @@ data class SearchState(
     val isLoadingMore: Boolean = false,
     val nextCursor: String? = null,
     val endReached: Boolean = false,
-    val error: UiText? = null
+    val error: UiText? = null,
+    val isBudgetSheetVisible: Boolean = false
 ) {
     val canLoadMore: Boolean
         get() = !isLoading && !isLoadingMore && !endReached && nextCursor != null
