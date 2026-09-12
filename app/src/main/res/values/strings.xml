@@ -1,3 +1,21 @@
 <resources>
     <string name="app_name">FilamentPokemon</string>
+
+    <!-- Network errors -->
+    <string name="error_no_internet">No internet connection. Check your network and try again.</string>
+    <string name="error_timeout">The request timed out. Please try again.</string>
+    <string name="error_too_many_requests">Sketchfab is rate-limiting requests. Wait a moment and retry.</string>
+    <string name="error_unauthorized">Sketchfab rejected the API token. Add a valid SKETCHFAB_API_TOKEN to local.properties and rebuild.</string>
+    <string name="error_forbidden">This model can’t be downloaded with your account.</string>
+    <string name="error_not_found">Model not found on Sketchfab.</string>
+    <string name="error_serialization">Unexpected response from Sketchfab.</string>
+    <string name="error_server">Sketchfab is having trouble right now. Try again later.</string>
+    <string name="error_unknown">Something went wrong.</string>
+
+    <!-- Local errors -->
+    <string name="error_disk_full">Not enough free space to download this model.</string>
+    <string name="error_file_not_found">The downloaded model file is missing.</string>
+    <string name="error_over_polygon_budget">This model exceeds your triangle budget and was skipped to keep rendering smooth.</string>
+    <string name="error_file_too_large">This model’s file is too large for mobile download.</string>
+    <string name="error_no_glb_archive">Sketchfab doesn’t offer a .glb version of this model.</string>
 </resources>
