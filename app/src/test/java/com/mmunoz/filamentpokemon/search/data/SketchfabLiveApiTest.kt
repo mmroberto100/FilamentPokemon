@@ -9,7 +9,7 @@ import com.mmunoz.filamentpokemon.core.data.networking.HttpClientFactory
 import com.mmunoz.filamentpokemon.core.domain.util.Result
 import com.mmunoz.filamentpokemon.search.domain.PolygonBudget
 import com.mmunoz.filamentpokemon.search.domain.fitsBudget
-import io.ktor.client.engine.okhttp.OkHttp
+import com.mmunoz.filamentpokemon.core.data.networking.OkHttpEngineFactory
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 class SketchfabLiveApiTest {
 
     private val dataSource = KtorSketchfabModelDataSource(
-        HttpClientFactory.create(engine = OkHttp.create(), apiToken = "")
+        HttpClientFactory.create(engine = OkHttpEngineFactory.create(), apiToken = "")
     )
 
     @Test

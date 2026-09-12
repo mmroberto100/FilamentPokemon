@@ -1,24 +1,45 @@
 package com.mmunoz.filamentpokemon.di
 
+import coil3.ImageLoader
+import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.request.crossfade
 import com.mmunoz.filamentpokemon.BuildConfig
 import com.mmunoz.filamentpokemon.core.data.networking.HttpClientFactory
+import com.mmunoz.filamentpokemon.core.data.networking.OkHttpEngineFactory
 import com.mmunoz.filamentpokemon.search.data.KtorSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.SketchfabModelDataSource
+import com.mmunoz.filamentpokemon.search.presentation.SearchViewModel
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.okhttp.OkHttp
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.module.dsl.viewModelOf
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
-/**
- * Root Koin module. Layer-specific definitions (search, viewer) are added in later steps.
- */
+val IMAGE_HTTP_CLIENT = named("images")
+
 val appModule = module {
+    /** Authenticated client for api.sketchfab.com. */
     single<HttpClient> {
         HttpClientFactory.create(
-            engine = OkHttp.create(),
+            engine = OkHttpEngineFactory.create(),
             apiToken = BuildConfig.SKETCHFAB_API_TOKEN,
             enableLogging = BuildConfig.DEBUG
         )
     }
 
+    /** Unauthenticated client for thumbnails – the API token must never reach the media CDN. */
+    single<HttpClient>(IMAGE_HTTP_CLIENT) {
+        HttpClientFactory.create(engine = OkHttpEngineFactory.create(), apiToken = "")
+    }
+
+    single<ImageLoader> {
+        ImageLoader.Builder(androidContext())
+            .components { add(KtorNetworkFetcherFactory(get<HttpClient>(IMAGE_HTTP_CLIENT))) }
+            .crossfade(true)
+            .build()
+    }
+
+    // Search
     single<SketchfabModelDataSource> { KtorSketchfabModelDataSource(get()) }
+    viewModelOf(::SearchViewModel)
 }
