@@ -11,6 +11,9 @@ plugins {
 //   SKETCHFAB_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 // Get it from https://sketchfab.com/settings/password ("API token").
 // Search works without it; the Download API (Step 6) needs it.
+// The SKETCHFAB_API_TOKEN environment variable is the fallback (CI, no local.properties).
+// Only debug builds embed it: a release APK ships an empty string, so the personal token
+// can never be recovered from a distributed binary (OAuth replaces it in Step 10).
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -35,14 +38,20 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "SKETCHFAB_API_TOKEN", "\"$sketchfabApiToken\"")
+        buildConfigField("String", "SKETCHFAB_API_TOKEN", "\"\"")
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "SKETCHFAB_API_TOKEN", "\"$sketchfabApiToken\"")
+        }
         release {
+            // R8 code shrinking + obfuscation + resource shrinking, with AGP's default
+            // proguard-android-optimize rules. Project rules: proguard-rules.pro.
             optimization {
-                enable = false
+                enable = true
             }
+            proguardFiles("proguard-rules.pro")
         }
     }
     compileOptions {
