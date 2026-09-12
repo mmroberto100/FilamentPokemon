@@ -27,6 +27,8 @@ sealed interface DataError : Error {
         FILE_TOO_LARGE,
         /** Sketchfab offers no .glb archive for this model. */
         NO_GLB_ARCHIVE,
+        /** The file on disk is not a complete glTF-Binary container (truncated, purged or not a .glb). */
+        CORRUPT_FILE,
         UNKNOWN
     }
 }

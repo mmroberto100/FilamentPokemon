@@ -50,4 +50,5 @@
     <string name="error_over_polygon_budget">This model exceeds your triangle budget and was skipped to keep rendering smooth.</string>
     <string name="error_file_too_large">This model’s file is too large for mobile download.</string>
     <string name="error_no_glb_archive">Sketchfab doesn’t offer a .glb version of this model.</string>
+    <string name="error_corrupt_file">The model file is damaged or incomplete. Try downloading it again.</string>
 </resources>
