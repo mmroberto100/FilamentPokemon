@@ -1,6 +1,19 @@
 <resources>
     <string name="app_name">FilamentPokemon</string>
 
+    <!-- Search screen -->
+    <string name="search_title">Pokémon models</string>
+    <string name="search_hint">Search Pokémon (e.g. pikachu)</string>
+    <string name="search_budget_label">Budget ≤ %1$s faces</string>
+    <string name="search_empty">No downloadable Pokémon models under your face budget. Try another name.</string>
+    <string name="search_retry">Retry</string>
+    <string name="search_faces_chip">%1$s faces</string>
+    <string name="search_animated_badge">Animated</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_clear_query">Clear search</string>
+    <string name="cd_model_thumbnail">Preview of %1$s</string>
+    <string name="cd_animated">This model is animated</string>
+
     <!-- Network errors -->
     <string name="error_no_internet">No internet connection. Check your network and try again.</string>
     <string name="error_timeout">The request timed out. Please try again.</string>

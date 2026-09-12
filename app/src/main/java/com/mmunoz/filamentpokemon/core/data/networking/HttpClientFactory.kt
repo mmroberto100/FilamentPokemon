@@ -43,6 +43,8 @@ object HttpClientFactory {
         if (enableLogging) {
             install(Logging) {
                 level = LogLevel.INFO
+                // Never let the API token reach logcat, whatever the level.
+                sanitizeHeader { it == HttpHeaders.Authorization }
                 logger = object : Logger {
                     private val log = KermitLogger.withTag("Ktor")
                     override fun log(message: String) = log.d { message }
