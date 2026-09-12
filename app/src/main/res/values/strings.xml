@@ -24,6 +24,7 @@
     <!-- Viewer -->
     <string name="viewer_checking_budget">Checking triangle budget…</string>
     <string name="viewer_downloading">Downloading… %1$d%%</string>
+    <string name="viewer_downloading_indeterminate">Downloading…</string>
     <string name="viewer_loading_scene">Loading into scene…</string>
     <string name="viewer_by_author">by %1$s</string>
     <string name="viewer_faces">%1$s faces</string>
