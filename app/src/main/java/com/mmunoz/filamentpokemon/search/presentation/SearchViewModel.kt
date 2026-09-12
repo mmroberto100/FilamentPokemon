@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -48,13 +48,15 @@ class SearchViewModel(
 
     private var searchJob: Job? = null
 
+    /** Params of the running or last finished first-page search. */
+    private var lastSearchParams: SearchParams? = null
+
     init {
         combine(
             queryInput.debounce(QUERY_DEBOUNCE_MS),
             maxFaceCount
         ) { query, maxFaces -> SearchParams(query.trim(), maxFaces) }
-            .distinctUntilChanged()
-            .onEach { startNewSearch(it) }
+            .onEach { search(it, force = false) }
             .launchIn(viewModelScope)
     }
 
@@ -68,10 +70,11 @@ class SearchViewModel(
 
             SearchAction.OnClearQuery -> onAction(SearchAction.OnQueryChange(""))
 
-            // Bypass the debounce: search immediately with the current input.
+            // Bypass the debounce: search immediately with the current input, even if unchanged.
             SearchAction.OnSearchSubmit,
-            SearchAction.OnRetry -> startNewSearch(
-                SearchParams(_state.value.query.trim(), _state.value.maxFaceCount)
+            SearchAction.OnRetry -> search(
+                SearchParams(_state.value.query.trim(), _state.value.maxFaceCount),
+                force = true
             )
 
             SearchAction.OnLoadMore -> loadNextPage()
@@ -92,11 +95,23 @@ class SearchViewModel(
 
             SearchAction.OnMaxFaceCountChangeFinished -> viewModelScope.launch {
                 userPreferences.setMaxFaceCount(_state.value.maxFaceCount)
+                    .onFailure { error ->
+                        // The label must not advertise a budget the search never adopted.
+                        _state.update { it.copy(maxFaceCount = userPreferences.maxFaceCount.first()) }
+                        _events.send(SearchEvent.ShowError(error.toUiText()))
+                    }
             }
         }
     }
 
-    private fun startNewSearch(params: SearchParams) {
+    /**
+     * Single entry point for a first-page search. The debounced pipeline also re-emits the params
+     * of a search that Submit/Retry already started; that repeat must not cancel or reset it.
+     */
+    private fun search(params: SearchParams, force: Boolean) {
+        if (!force && params == lastSearchParams) return
+        lastSearchParams = params
+
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _state.update {
@@ -115,7 +130,9 @@ class SearchViewModel(
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            models = page.models.map { model -> model.toUi(params.maxFaceCount) },
+                            models = page.models
+                                .map { model -> model.toUi(params.maxFaceCount) }
+                                .distinctBy(PokemonModelUi::uid),
                             nextCursor = page.nextCursor,
                             endReached = page.nextCursor == null
                         )
@@ -141,9 +158,12 @@ class SearchViewModel(
             )
                 .onSuccess { page ->
                     _state.update {
+                        // Cursor pagination over a live sort can repeat a model across pages;
+                        // the grid keys items by uid, so keep the first occurrence only.
+                        val incoming = page.models.map { model -> model.toUi(it.maxFaceCount) }
                         it.copy(
                             isLoadingMore = false,
-                            models = it.models + page.models.map { model -> model.toUi(it.maxFaceCount) },
+                            models = (it.models + incoming).distinctBy(PokemonModelUi::uid),
                             nextCursor = page.nextCursor,
                             endReached = page.nextCursor == null
                         )

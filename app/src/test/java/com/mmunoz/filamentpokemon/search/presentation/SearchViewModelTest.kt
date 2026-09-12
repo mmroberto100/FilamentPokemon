@@ -106,6 +106,55 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun `submit inside the debounce window issues one request and keeps its results`() = runTest {
+        val vm = viewModel()
+        advanceTimeBy(401)
+        dataSource.searchCalls.clear()
+        dataSource.pageQueue += page("a")
+
+        vm.onAction(SearchAction.OnQueryChange("eevee"))
+        vm.onAction(SearchAction.OnSearchSubmit)
+        assertThat(vm.state.value.models.map { it.uid }).containsExactly("a")
+
+        // The debounce now emits the same params; that must not restart the search.
+        advanceTimeBy(401)
+
+        assertThat(dataSource.searchCalls.map { it.query }).containsExactly("eevee")
+        assertThat(vm.state.value.isLoading).isFalse()
+        assertThat(vm.state.value.models.map { it.uid }).containsExactly("a")
+    }
+
+    @Test
+    fun `submitting the same query again is a refresh and re-requests`() = runTest {
+        val vm = viewModel()
+        advanceTimeBy(401)
+        dataSource.searchCalls.clear()
+
+        vm.onAction(SearchAction.OnQueryChange("eevee"))
+        vm.onAction(SearchAction.OnSearchSubmit)
+        vm.onAction(SearchAction.OnSearchSubmit)
+
+        assertThat(dataSource.searchCalls.map { it.query }).containsExactly("eevee", "eevee")
+    }
+
+    @Test
+    fun `typing a new query after a submit is still debounced into one request`() = runTest {
+        val vm = viewModel()
+        advanceTimeBy(401)
+        dataSource.searchCalls.clear()
+
+        vm.onAction(SearchAction.OnQueryChange("eevee"))
+        vm.onAction(SearchAction.OnSearchSubmit)
+        vm.onAction(SearchAction.OnQueryChange("eevee "))
+        advanceTimeBy(100)
+        vm.onAction(SearchAction.OnQueryChange("eevee s"))
+        assertThat(dataSource.searchCalls).hasSize(1)
+
+        advanceTimeBy(401)
+        assertThat(dataSource.searchCalls.map { it.query }).containsExactly("eevee", "eevee s")
+    }
+
+    @Test
     fun `load more appends the next page and marks the end`() = runTest {
         dataSource.pageQueue += page("a", next = "1")
         dataSource.pageQueue += page("b", next = null)
@@ -123,6 +172,28 @@ class SearchViewModelTest {
         // Nothing left to load: further requests are ignored.
         vm.onAction(SearchAction.OnLoadMore)
         assertThat(dataSource.searchCalls).hasSize(2)
+    }
+
+    @Test
+    fun `load more drops models already in the list and keeps the first page order`() = runTest {
+        dataSource.pageQueue += page("a", "b", next = "1")
+        dataSource.pageQueue += page("b", "c", "a", next = null)
+        val vm = viewModel()
+        advanceTimeBy(401)
+
+        vm.onAction(SearchAction.OnLoadMore)
+
+        assertThat(vm.state.value.models.map { it.uid }).containsExactly("a", "b", "c")
+        assertThat(vm.state.value.endReached).isTrue()
+    }
+
+    @Test
+    fun `first page drops duplicate uids`() = runTest {
+        dataSource.pageQueue += page("a", "b", "a")
+        val vm = viewModel()
+        advanceTimeBy(401)
+
+        assertThat(vm.state.value.models.map { it.uid }).containsExactly("a", "b")
     }
 
     @Test
@@ -146,6 +217,7 @@ class SearchViewModelTest {
 
         vm.onAction(SearchAction.OnRetry)
 
+        assertThat(dataSource.searchCalls).hasSize(2)
         assertThat(vm.state.value.error).isNull()
         assertThat(vm.state.value.models.map { it.uid }).containsExactly("a")
     }
@@ -228,6 +300,24 @@ class SearchViewModelTest {
 
         assertThat(dataSource.searchCalls.single().maxFaceCount).isEqualTo(10_000)
         assertThat(userPreferences.maxFaceCount.first()).isEqualTo(10_000)
+    }
+
+    @Test
+    fun `failed budget write shows an error and restores the stored budget`() = runTest {
+        val vm = viewModel()
+        advanceTimeBy(401)
+        dataSource.searchCalls.clear()
+        userPreferences.writeError = DataError.Local.UNKNOWN
+
+        vm.onAction(SearchAction.OnMaxFaceCountChange(10_000))
+        vm.events.test {
+            vm.onAction(SearchAction.OnMaxFaceCountChangeFinished)
+            assertThat(awaitItem()).isInstanceOf(SearchEvent.ShowError::class)
+        }
+
+        assertThat(vm.state.value.maxFaceCount).isEqualTo(PolygonBudget.DEFAULT_MAX_FACES)
+        assertThat(userPreferences.maxFaceCount.first()).isEqualTo(PolygonBudget.DEFAULT_MAX_FACES)
+        assertThat(dataSource.searchCalls).hasSize(0)
     }
 
     @Test
