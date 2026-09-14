@@ -9,6 +9,7 @@ import com.mmunoz.filamentpokemon.viewer.data.dto.DownloadLinkDto
 import com.mmunoz.filamentpokemon.viewer.data.dto.DownloadResponseDto
 import com.mmunoz.filamentpokemon.viewer.domain.DownloadProgress
 import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
+import com.mmunoz.filamentpokemon.viewer.domain.GlbHeader
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.prepareGet
@@ -32,7 +33,8 @@ import java.io.IOException
 class KtorGlbDownloader(
     private val apiClient: HttpClient,
     private val downloadClient: HttpClient,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val bufferSize: Int = DEFAULT_BUFFER_SIZE
 ) : GlbDownloader {
 
     override suspend fun download(
@@ -68,21 +70,32 @@ class KtorGlbDownloader(
                 if (!response.status.isSuccess()) {
                     return@execute Result.Error(response.status.value.toDownloadError())
                 }
-                val total = response.contentLength() ?: link.size
+                val contentLength = response.contentLength()
+                if (contentLength != null && contentLength > PolygonBudget.MAX_GLB_BYTES) {
+                    return@execute Result.Error(DataError.Local.FILE_TOO_LARGE)
+                }
+                val total = contentLength ?: link.size
+                val progress = ProgressThrottle(total, onProgress)
                 val channel = response.bodyAsChannel()
-                val buffer = ByteArray(BUFFER_SIZE)
+                val buffer = ByteArray(bufferSize)
                 var bytesRead = 0L
 
                 FileOutputStream(partFile).use { out ->
                     while (true) {
                         val read = channel.readAvailable(buffer, 0, buffer.size)
                         if (read <= 0) break
-                        out.write(buffer, 0, read)
                         bytesRead += read
-                        onProgress(DownloadProgress(bytesRead, total))
+                        // Declared sizes are server-controlled; the bytes actually received are the cap.
+                        if (bytesRead > PolygonBudget.MAX_GLB_BYTES) {
+                            return@execute Result.Error(DataError.Local.FILE_TOO_LARGE)
+                        }
+                        out.write(buffer, 0, read)
+                        progress.onChunk(bytesRead)
                     }
                 }
-                if (bytesRead == 0L) return@execute Result.Error(DataError.Network.UNKNOWN)
+                progress.onComplete(bytesRead)
+                if (total > 0 && bytesRead < total) return@execute Result.Error(DataError.Local.CORRUPT_FILE)
+                if (!GlbHeader.isValid(partFile)) return@execute Result.Error(DataError.Local.CORRUPT_FILE)
 
                 destination.delete()
                 if (!partFile.renameTo(destination)) return@execute Result.Error(DataError.Local.UNKNOWN)
@@ -112,8 +125,42 @@ class KtorGlbDownloader(
         message?.contains("ENOSPC", ignoreCase = true) == true ||
             message?.contains("No space left", ignoreCase = true) == true
 
+    /**
+     * Collapses per-chunk updates into one per whole percent – one per [UNKNOWN_TOTAL_STEP_BYTES]
+     * when the size is unknown – so a large stream cannot flood the UI with state updates.
+     */
+    private class ProgressThrottle(
+        private val totalBytes: Long,
+        private val onProgress: (DownloadProgress) -> Unit
+    ) {
+        private var lastPercent = 0
+        private var lastReportedBytes = 0L
+
+        fun onChunk(bytesRead: Long) {
+            if (totalBytes > 0) {
+                val percent = (bytesRead * 100 / totalBytes).toInt()
+                if (percent == lastPercent) return
+                lastPercent = percent
+            } else if (bytesRead - lastReportedBytes < UNKNOWN_TOTAL_STEP_BYTES) {
+                return
+            }
+            report(bytesRead)
+        }
+
+        /** The final byte count always reaches the caller, unless the last chunk already delivered it. */
+        fun onComplete(bytesRead: Long) {
+            if (bytesRead != lastReportedBytes) report(bytesRead)
+        }
+
+        private fun report(bytesRead: Long) {
+            lastReportedBytes = bytesRead
+            onProgress(DownloadProgress(bytesRead, totalBytes))
+        }
+    }
+
     private companion object {
-        const val BUFFER_SIZE = 64 * 1024
+        const val DEFAULT_BUFFER_SIZE = 64 * 1024
+        const val UNKNOWN_TOTAL_STEP_BYTES = 256 * 1024L
         const val DOWNLOAD_REQUEST_TIMEOUT_MS = 10 * 60_000L
         const val DOWNLOAD_SOCKET_TIMEOUT_MS = 60_000L
     }
