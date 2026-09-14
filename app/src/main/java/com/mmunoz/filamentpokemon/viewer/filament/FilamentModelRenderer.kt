@@ -52,6 +52,9 @@ class FilamentModelRenderer(
     /** Non-null from [loadGlb] until the model's outcome has been reported. */
     private var pendingLoad: PendingLoad? = null
 
+    /** Set when gltfio's own bounding box is wrong for the current model (see [GlbBounds]). */
+    private var correctedBounds: GlbBounds.Aabb? = null
+
     /** Invoked once on the main thread when all of the current model's resources are resident. */
     var onModelLoaded: (() -> Unit)? = null
 
@@ -99,8 +102,8 @@ class FilamentModelRenderer(
      */
     suspend fun loadGlb(file: File) {
         if (released) return
-        val buffer = try {
-            withContext(Dispatchers.IO) { file.readDirectBuffer() }
+        val (buffer, bounds) = try {
+            withContext(Dispatchers.IO) { file.readDirectBuffer().let { it to GlbBounds.correctedBox(it) } }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -108,11 +111,14 @@ class FilamentModelRenderer(
             reportFailure(ModelLoadError.FileUnreadable)
             return
         }
-        loadGlb(buffer)
+        loadGlb(buffer, bounds)
     }
 
-    /** Never throws: bytes gltfio cannot parse report [ModelLoadError.ParseFailed]. */
-    fun loadGlb(buffer: ByteBuffer) {
+    /**
+     * Never throws: bytes gltfio cannot parse report [ModelLoadError.ParseFailed]. [bounds] is the
+     * [GlbBounds] correction for the buffer, computed here when the caller has not done so off-thread.
+     */
+    fun loadGlb(buffer: ByteBuffer, bounds: GlbBounds.Aabb? = GlbBounds.correctedBox(buffer)) {
         if (released) return
         pendingLoad = PendingLoad()
         val parsed = try {
@@ -127,13 +133,39 @@ class FilamentModelRenderer(
             reportFailure(ModelLoadError.ParseFailed)
             return
         }
-        modelViewer.transformToUnitCube()
-        log.d { "glb parsed: ${modelViewer.asset?.entities?.size ?: 0} entities, animations=${modelViewer.animator?.animationCount ?: 0}" }
+        correctedBounds = bounds
+        frameModel()
+        log.d { "glb parsed: ${modelViewer.asset?.entities?.size ?: 0} entities, animations=${modelViewer.animator?.animationCount ?: 0}, correctedBounds=${correctedBounds != null}" }
     }
 
     fun resetCamera() {
         if (released) return
-        modelViewer.transformToUnitCube()
+        frameModel()
+    }
+
+    /**
+     * Scales and centres the model's root so it fills a unit cube at the camera target, exactly
+     * like [ModelViewer.transformToUnitCube] but from [correctedBounds] when gltfio's box is unusable.
+     */
+    private fun frameModel() {
+        val bounds = correctedBounds ?: return modelViewer.transformToUnitCube()
+        val asset = modelViewer.asset ?: return
+        val maxExtent = 2f * bounds.halfExtent.max()
+        if (maxExtent <= 0f || !maxExtent.isFinite()) return modelViewer.transformToUnitCube()
+        val scaleFactor = 2f / maxExtent
+        // Column-major scale(scaleFactor) * translation(-centre): the centre lands on the camera target.
+        val center = bounds.center
+        val transform = FloatArray(16).also {
+            it[0] = scaleFactor
+            it[5] = scaleFactor
+            it[10] = scaleFactor
+            it[12] = -center[0] * scaleFactor + OBJECT_POSITION[0]
+            it[13] = -center[1] * scaleFactor + OBJECT_POSITION[1]
+            it[14] = -center[2] * scaleFactor + OBJECT_POSITION[2]
+            it[15] = 1f
+        }
+        val tm = engine.transformManager
+        tm.setTransform(tm.getInstance(asset.root), transform)
     }
 
     private fun checkPendingLoad(pending: PendingLoad, frameTimeNanos: Long) {
@@ -224,6 +256,9 @@ class FilamentModelRenderer(
         const val LOAD_TIMEOUT_MS = 20_000L
 
         private const val NO_FRAME = -1L
+
+        /** ModelViewer's camera target (its private kDefaultObjectPosition). */
+        private val OBJECT_POSITION = floatArrayOf(0f, 0f, -4f)
         private val LOAD_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(LOAD_TIMEOUT_MS)
         private const val ENV_DIR = "envs/default_env"
         private const val ENV_NAME = "default_env"

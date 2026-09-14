@@ -81,7 +81,8 @@ class GltfDecoderTest {
     @Ignore(
         "gltfio 1.75.1 builds FilamentAsset.boundingBox from the POSITION accessor's raw min/max " +
             "(AssetLoader.cpp, createPrimitive) and ignores `normalized`, so KHR_mesh_quantization " +
-            "models with SHORT positions report bounds 32767x too large; still present on upstream main"
+            "models with SHORT positions report bounds 32767x too large; still present on upstream main. " +
+            "The app frames such models from GlbBounds instead (see FilamentModelRendererTest.rendersQuantizedMeshoptDuck)"
     )
     @Test
     fun quantizedMeshoptDuckReportsTheSameBoundsAsThePlainDuck() {

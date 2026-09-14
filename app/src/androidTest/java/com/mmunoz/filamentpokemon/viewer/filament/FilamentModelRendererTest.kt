@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
@@ -49,12 +48,7 @@ class FilamentModelRendererTest {
     @Test
     fun loadsQuantizedMeshoptDuck() = load(SampleModels.DUCK_MESHOPT_QUANTIZED) { _, _ -> }
 
-    @Ignore(
-        "ModelViewer.transformToUnitCube() scales by FilamentAsset.boundingBox, which gltfio 1.75.1 " +
-            "computes from the raw min/max of normalized accessors and so is 32767x too large for " +
-            "KHR_mesh_quantization models (GltfDecoderTest.quantizedMeshoptDuckReportsTheSameBoundsAsThePlainDuck); " +
-            "the model loads but shrinks to a sub-pixel speck"
-    )
+    /** gltfio's own box is 32767x too large for this model; the renderer frames it from [GlbBounds]. */
     @Test
     fun rendersQuantizedMeshoptDuck() = assertRenders(SampleModels.DUCK_MESHOPT_QUANTIZED)
 
