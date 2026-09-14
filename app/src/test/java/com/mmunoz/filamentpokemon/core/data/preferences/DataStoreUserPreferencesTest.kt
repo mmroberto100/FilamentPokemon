@@ -5,6 +5,8 @@ import app.cash.turbine.test
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
+import com.mmunoz.filamentpokemon.core.domain.util.DataError
+import com.mmunoz.filamentpokemon.core.domain.util.Result
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -67,5 +69,23 @@ class DataStoreUserPreferencesTest {
         // Second "process": a fresh instance over the same file reads the persisted value.
         val second = DataStoreUserPreferences(PreferenceDataStoreFactory.create(scope = scope) { file })
         assertThat(second.maxFaceCount.first()).isEqualTo(20_000)
+    }
+
+    @Test
+    fun `falls back to the default budget when the stored file is corrupt`() = runTest {
+        File(tempDir, "corrupt.preferences_pb").writeBytes("not a protobuf".toByteArray())
+
+        assertThat(preferences("corrupt.preferences_pb").maxFaceCount.first())
+            .isEqualTo(PolygonBudget.DEFAULT_MAX_FACES)
+    }
+
+    @Test
+    fun `reports a failed write instead of throwing`() = runTest {
+        // A directory where the file should be makes every read and write raise an IOException.
+        File(tempDir, "dir.preferences_pb").mkdirs()
+        val prefs = preferences("dir.preferences_pb")
+
+        assertThat(prefs.setMaxFaceCount(12_000)).isEqualTo(Result.Error(DataError.Local.UNKNOWN))
+        assertThat(prefs.maxFaceCount.first()).isEqualTo(PolygonBudget.DEFAULT_MAX_FACES)
     }
 }
