@@ -11,6 +11,7 @@ import assertk.assertions.messageContains
 import com.mmunoz.filamentpokemon.core.domain.model.PolygonBudget
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 
@@ -269,24 +271,30 @@ class ModelCacheManagerTest {
         assertThat(probe.maxConcurrent.get()).isEqualTo(1)
     }
 
-    /** Runs blocks on real IO threads and records how many of them overlap. */
+    /**
+     * Runs blocks on real IO threads and records how many of the cache's `withContext(io)` sections
+     * overlap. A section counts from its dispatch until its job completes — not until the dispatched
+     * runnable returns, because that runnable also resumes the caller (which releases the mutex), so
+     * on a slow machine the next section can legitimately start before the runnable unwinds.
+     */
     private class ConcurrencyProbe : CoroutineDispatcher() {
         private val active = AtomicInteger()
+        private val tracked = ConcurrentHashMap.newKeySet<Job>()
         val maxConcurrent = AtomicInteger()
         val runs = AtomicInteger()
 
         override fun dispatch(context: CoroutineContext, block: Runnable) {
-            Dispatchers.IO.dispatch(context) {
+            val job = checkNotNull(context[Job]) { "withContext sections always carry a Job" }
+            if (tracked.add(job)) {
                 val now = active.incrementAndGet()
                 maxConcurrent.accumulateAndGet(now) { a, b -> maxOf(a, b) }
                 runs.incrementAndGet()
-                try {
-                    // Widens the window so unserialized calls would overlap.
-                    Thread.sleep(2)
-                    block.run()
-                } finally {
-                    active.decrementAndGet()
-                }
+                job.invokeOnCompletion { active.decrementAndGet() }
+            }
+            Dispatchers.IO.dispatch(context) {
+                // Widens the window so unserialized sections would overlap.
+                Thread.sleep(2)
+                block.run()
             }
         }
     }
