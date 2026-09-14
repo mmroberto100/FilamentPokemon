@@ -144,12 +144,13 @@ class ViewerViewModel(
         if (_state.value.phase != ViewerPhase.LoadingIntoScene) return
         when (reason) {
             ModelLoadError.FileUnreadable -> fail(DataError.Local.NOT_FOUND)
-            ModelLoadError.ParseFailed,
-            ModelLoadError.Timeout -> {
+            ModelLoadError.ParseFailed -> {
                 fail(DataError.Local.CORRUPT_FILE)
                 // Retry must download fresh bytes instead of re-loading the same file.
                 evictJob = viewModelScope.launch { cache.evict(uid) }
             }
+            // A slow GPU is not a corrupt file: keep the bytes so Retry reloads from the cache.
+            ModelLoadError.Timeout -> fail(DataError.Local.RENDER_TIMEOUT)
         }
     }
 

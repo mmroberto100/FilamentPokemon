@@ -31,6 +31,8 @@ sealed interface DataError : Error {
         CORRUPT_FILE,
         /** A user preference could not be persisted; the in-memory value still applies for this session. */
         PREFERENCE_NOT_SAVED,
+        /** The renderer gave up waiting for the model's resources; the file itself may be fine. */
+        RENDER_TIMEOUT,
         UNKNOWN
     }
 }

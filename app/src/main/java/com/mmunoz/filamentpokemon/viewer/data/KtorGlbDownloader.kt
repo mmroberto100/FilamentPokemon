@@ -20,6 +20,8 @@ import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -94,11 +96,19 @@ class KtorGlbDownloader(
                     }
                 }
                 progress.onComplete(bytesRead)
-                if (total > 0 && bytesRead < total) return@execute Result.Error(DataError.Local.CORRUPT_FILE)
+                // Only the transport's own length is authoritative; link.size is metadata and may be stale.
+                if (contentLength != null && bytesRead < contentLength) return@execute Result.Error(DataError.Local.CORRUPT_FILE)
                 if (!GlbHeader.isValid(partFile)) return@execute Result.Error(DataError.Local.CORRUPT_FILE)
 
                 destination.delete()
                 if (!partFile.renameTo(destination)) return@execute Result.Error(DataError.Local.UNKNOWN)
+                // A cancellation that lands after the rename must not leave an unleased .glb behind.
+                try {
+                    currentCoroutineContext().ensureActive()
+                } catch (e: CancellationException) {
+                    destination.delete()
+                    throw e
+                }
                 Result.Success(destination)
             }
         } catch (e: CancellationException) {

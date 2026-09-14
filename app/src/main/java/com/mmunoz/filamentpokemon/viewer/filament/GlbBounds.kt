@@ -62,8 +62,10 @@ object GlbBounds {
         nodes.indices.filter { it !in childIndices }.forEach { roots += it }
 
         val total = Aabb(FloatArray(3) { Float.POSITIVE_INFINITY }, FloatArray(3) { Float.NEGATIVE_INFINITY })
+        // glTF nodes form a tree; a hostile file that repeats children would otherwise fan out exponentially.
+        val visited = HashSet<Int>()
         fun visit(index: Int, parentWorld: FloatArray, depth: Int) {
-            if (depth > MAX_DEPTH) return
+            if (depth > MAX_DEPTH || index !in nodes.indices || !visited.add(index)) return
             val node = nodes[index].jsonObject
             val world = multiply(parentWorld, localTransform(node))
             node["mesh"]?.jsonPrimitive?.intOrNull?.let { meshIndex ->

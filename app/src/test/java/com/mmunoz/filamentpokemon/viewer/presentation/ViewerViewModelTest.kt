@@ -271,14 +271,18 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun `a renderer timeout is treated like a corrupt file`() = runTest {
+    fun `a renderer timeout keeps the file so Retry reloads it from the cache`() = runTest {
         val vm = viewModel()
 
         vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.Timeout))
 
         assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
-        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_corrupt_file)
-        assertThat(cache.evicted).containsExactly(uid)
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_render_timeout)
+        assertThat(cache.evicted).isEmpty()
+
+        vm.onAction(ViewerAction.OnRetry)
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
+        assertThat(downloader.calls).containsExactly(uid)
     }
 
     @Test

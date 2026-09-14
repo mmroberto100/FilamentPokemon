@@ -53,4 +53,5 @@
     <string name="error_no_glb_archive">Sketchfab doesn’t offer a .glb version of this model.</string>
     <string name="error_corrupt_file">The model file is damaged or incomplete. Try downloading it again.</string>
     <string name="error_preference_not_saved">Couldn’t save your triangle budget. It will reset next time you open the app.</string>
+    <string name="error_render_timeout">This model is taking too long to load on this device. Try again, or pick a lighter model.</string>
 </resources>

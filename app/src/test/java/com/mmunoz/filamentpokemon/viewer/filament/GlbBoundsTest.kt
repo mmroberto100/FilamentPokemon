@@ -83,4 +83,19 @@ class GlbBoundsTest {
         assertThat(GlbBounds.correctedBox(glb("{not json"))).isNull()
         assertThat(GlbBounds.correctedBox(asset("corrupt.glb"))).isNull()
     }
+
+    @Test
+    fun `a node that repeats itself as its own child is visited once`() {
+        // A hostile tree: node 0 lists itself many times; a naive walk would fan out exponentially.
+        val box = GlbBounds.correctedBox(
+            glb(
+                """{"scenes":[{"nodes":[0]}],
+                    "nodes":[{"children":[0,0,0,0,0,0,0,0],"mesh":0}],
+                    "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],
+                    "accessors":[{"componentType":5122,"normalized":true,"count":8,"type":"VEC3","min":[-32767,-32767,-32767],"max":[32767,32767,32767]}]}"""
+            )
+        )
+        assertThat(box).isNotNull()
+        assertThat(box!!.halfExtent[0]).isCloseTo(1f, 1e-5f)
+    }
 }
