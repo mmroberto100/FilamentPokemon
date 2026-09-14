@@ -11,11 +11,13 @@ import com.google.android.filament.Skybox
 import com.google.android.filament.View
 import com.google.android.filament.utils.KTX1Loader
 import com.google.android.filament.utils.ModelViewer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.util.concurrent.TimeUnit
 
 /**
  * Owns one Filament [Engine] + [ModelViewer] bound to a [SurfaceView], the Choreographer frame
@@ -26,6 +28,11 @@ import java.nio.channels.FileChannel
  * when the SurfaceView is detached from its window, which Compose's AndroidView guarantees on
  * disposal. [release] runs just before that (registered first) to stop the loop and free the
  * environment while the engine is still alive. Never call `modelViewer.destroy()` twice.
+ *
+ * Every [loadGlb] ends in exactly one of [onModelLoaded] or [onModelLoadFailed], both invoked on
+ * the main thread; neither fires after [release], and a later outcome for a superseded load is
+ * dropped. The load timeout only counts time the frame loop is running, so a paused view never
+ * times out.
  */
 class FilamentModelRenderer(
     private val surfaceView: SurfaceView,
@@ -41,20 +48,22 @@ class FilamentModelRenderer(
 
     private var running = false
     private var released = false
-    private var modelLoadedReported = false
+
+    /** Non-null from [loadGlb] until the model's outcome has been reported. */
+    private var pendingLoad: PendingLoad? = null
 
     /** Invoked once on the main thread when all of the current model's resources are resident. */
     var onModelLoaded: (() -> Unit)? = null
+
+    /** Invoked once on the main thread when the current model cannot be shown. */
+    var onModelLoadFailed: ((ModelLoadError) -> Unit)? = null
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!running || released) return
             choreographer.postFrameCallback(this)
             modelViewer.render(frameTimeNanos)
-            if (!modelLoadedReported && modelViewer.asset != null && modelViewer.progress >= 1f) {
-                modelLoadedReported = true
-                onModelLoaded?.invoke()
-            }
+            pendingLoad?.let { checkPendingLoad(it, frameTimeNanos) }
         }
     }
 
@@ -73,6 +82,8 @@ class FilamentModelRenderer(
     fun start() {
         if (released || running) return
         running = true
+        // The gap while paused must not count against the load timeout.
+        pendingLoad?.lastFrameNanos = NO_FRAME
         choreographer.postFrameCallback(frameCallback)
     }
 
@@ -83,24 +94,66 @@ class FilamentModelRenderer(
 
     /**
      * Reads [file] off the main thread, then hands the buffer to gltfio (parse is synchronous,
-     * resource upload is asynchronous and completes over subsequent frames).
+     * resource upload is asynchronous and completes over subsequent frames). Never throws: a file
+     * that cannot be read reports [ModelLoadError.FileUnreadable] instead.
      */
     suspend fun loadGlb(file: File) {
-        val buffer = withContext(Dispatchers.IO) { file.readDirectBuffer() }
+        if (released) return
+        val buffer = try {
+            withContext(Dispatchers.IO) { file.readDirectBuffer() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.w(e) { "Cannot read ${file.name}" }
+            reportFailure(ModelLoadError.FileUnreadable)
+            return
+        }
         loadGlb(buffer)
     }
 
+    /** Never throws: bytes gltfio cannot parse report [ModelLoadError.ParseFailed]. */
     fun loadGlb(buffer: ByteBuffer) {
         if (released) return
-        modelLoadedReported = false
-        modelViewer.loadModelGlb(buffer)
+        pendingLoad = PendingLoad()
+        val parsed = try {
+            modelViewer.loadModelGlb(buffer)
+            modelViewer.asset != null
+        } catch (e: Exception) {
+            log.e(e) { "gltfio threw while parsing" }
+            false
+        }
+        if (!parsed) {
+            log.w { "gltfio rejected the buffer (${buffer.remaining()} bytes)" }
+            reportFailure(ModelLoadError.ParseFailed)
+            return
+        }
         modelViewer.transformToUnitCube()
-        log.d { "glb loaded: ${modelViewer.asset?.entities?.size ?: 0} entities, animations=${modelViewer.animator?.animationCount ?: 0}" }
+        log.d { "glb parsed: ${modelViewer.asset?.entities?.size ?: 0} entities, animations=${modelViewer.animator?.animationCount ?: 0}" }
     }
 
     fun resetCamera() {
         if (released) return
         modelViewer.transformToUnitCube()
+    }
+
+    private fun checkPendingLoad(pending: PendingLoad, frameTimeNanos: Long) {
+        if (modelViewer.asset != null && modelViewer.progress >= 1f) {
+            pendingLoad = null
+            onModelLoaded?.invoke()
+            return
+        }
+        if (pending.lastFrameNanos != NO_FRAME) pending.awaitedNanos += frameTimeNanos - pending.lastFrameNanos
+        pending.lastFrameNanos = frameTimeNanos
+        if (pending.awaitedNanos >= LOAD_TIMEOUT_NANOS) {
+            log.w { "model resources not resident after ${LOAD_TIMEOUT_MS} ms of rendering (progress=${modelViewer.progress})" }
+            reportFailure(ModelLoadError.Timeout)
+        }
+    }
+
+    private fun reportFailure(error: ModelLoadError) {
+        pendingLoad = null
+        if (released) return
+        onModelLoadFailed?.invoke(error)
     }
 
     private fun configureForMobile(view: View) {
@@ -135,7 +188,9 @@ class FilamentModelRenderer(
         if (released) return
         released = true
         stop()
+        pendingLoad = null
         onModelLoaded = null
+        onModelLoadFailed = null
         modelViewer.scene.indirectLight = null
         modelViewer.scene.skybox = null
         indirectLight?.let { engine.destroyIndirectLight(it) }
@@ -158,9 +213,20 @@ class FilamentModelRenderer(
             ByteBuffer.allocateDirect(bytes.size).put(bytes).apply { flip() }
         }
 
-    private companion object {
-        const val ENV_DIR = "envs/default_env"
-        const val ENV_NAME = "default_env"
-        const val IBL_INTENSITY = 30_000f
+    /** Frame-loop time spent waiting for the current model's resources. */
+    private class PendingLoad {
+        var awaitedNanos = 0L
+        var lastFrameNanos = NO_FRAME
+    }
+
+    companion object {
+        /** Frame-loop time after which a model whose resources never become resident is given up on. */
+        const val LOAD_TIMEOUT_MS = 20_000L
+
+        private const val NO_FRAME = -1L
+        private val LOAD_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(LOAD_TIMEOUT_MS)
+        private const val ENV_DIR = "envs/default_env"
+        private const val ENV_NAME = "default_env"
+        private const val IBL_INTENSITY = 30_000f
     }
 }

@@ -6,7 +6,9 @@ import app.cash.turbine.test
 import assertk.assertThat
 import assertk.assertions.containsExactly
 import assertk.assertions.hasSize
+import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
+import assertk.assertions.isFalse
 import assertk.assertions.isInstanceOf
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
@@ -18,8 +20,11 @@ import com.mmunoz.filamentpokemon.core.domain.util.Result
 import com.mmunoz.filamentpokemon.core.presentation.util.UiText
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource.Companion.model
-import com.mmunoz.filamentpokemon.viewer.domain.FakeGlbDownloader
+import com.mmunoz.filamentpokemon.viewer.domain.DownloadProgress
 import com.mmunoz.filamentpokemon.viewer.domain.FakeModelCache
+import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
+import com.mmunoz.filamentpokemon.viewer.domain.GlbHeader
+import com.mmunoz.filamentpokemon.viewer.filament.ModelLoadError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -32,6 +37,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ViewerViewModelTest {
@@ -41,7 +48,7 @@ class ViewerViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var dataSource: FakeSketchfabModelDataSource
-    private lateinit var downloader: FakeGlbDownloader
+    private lateinit var downloader: ScriptedGlbDownloader
     private lateinit var cache: FakeModelCache
     private lateinit var preferences: FakeUserPreferences
 
@@ -53,7 +60,7 @@ class ViewerViewModelTest {
         dataSource = FakeSketchfabModelDataSource().apply {
             modelResult = Result.Success(model(uid, faceCount = 10_000, name = "Pikachu"))
         }
-        downloader = FakeGlbDownloader()
+        downloader = ScriptedGlbDownloader()
         cache = FakeModelCache(tempDir)
         preferences = FakeUserPreferences(initial = 30_000)
     }
@@ -61,16 +68,23 @@ class ViewerViewModelTest {
     @AfterEach
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun viewModel(cleanupScope: TestScope? = null) = ViewerViewModel(
+    private fun viewModel(cleanupScope: TestScope? = null, uid: String = this.uid) = ViewerViewModel(
         savedStateHandle = SavedStateHandle(mapOf("uid" to uid, "name" to "Pikachu (route)")),
         modelDataSource = dataSource,
         downloader = downloader,
         cache = cache,
         userPreferences = preferences,
-        cleanupScope = cleanupScope ?: TestScope(testDispatcher)
+        cleanupScope = cleanupScope ?: TestScope(testDispatcher),
+        ioDispatcher = testDispatcher
     )
 
     private fun errorRes(state: ViewerState) = (state.error as UiText.StringResource).id
+
+    private fun cacheFile(bytes: ByteArray = validGlb()): File =
+        cache.fileFor(uid).apply { parentFile?.mkdirs(); writeBytes(bytes) }
+
+    /** Simulates Compose Navigation clearing the destination's ViewModel. */
+    private fun clear(vm: ViewerViewModel) = ViewModelStore().apply { put("viewer", vm) }.clear()
 
     @Test
     fun `happy path downloads with progress, hands the file to the renderer, then becomes Ready`() = runTest {
@@ -85,6 +99,7 @@ class ViewerViewModelTest {
         assertThat(state.info!!.formattedFaceCount).isEqualTo("10,000")
         assertThat(downloader.calls).containsExactly(uid)
         assertThat(cache.enforceLimitCalls).isEqualTo(1)
+        assertThat(cache.leases[uid]).isEqualTo(1)
 
         vm.onAction(ViewerAction.OnModelLoaded)
         assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Ready)
@@ -92,12 +107,21 @@ class ViewerViewModelTest {
 
     @Test
     fun `download progress is reflected in state`() = runTest {
-        downloader.progressSteps = listOf(0.4f)
+        downloader.progress = listOf(DownloadProgress(40, 100))
         downloader.result = Result.Error(DataError.Network.NO_INTERNET) // stop after progress
         val vm = viewModel()
 
         // The last progress emitted before the failure stays visible on the failed state.
         assertThat(vm.state.value.downloadProgress).isEqualTo(0.4f)
+    }
+
+    @Test
+    fun `unknown download size yields indeterminate progress`() = runTest {
+        downloader.progress = listOf(DownloadProgress(bytesRead = 40_000, totalBytes = -1))
+        downloader.result = Result.Error(DataError.Network.NO_INTERNET) // stop after progress
+        val vm = viewModel()
+
+        assertThat(vm.state.value.downloadProgress).isNull()
     }
 
     @Test
@@ -132,12 +156,51 @@ class ViewerViewModelTest {
 
     @Test
     fun `cached file skips the download entirely`() = runTest {
-        cache.fileFor(uid).apply { parentFile?.mkdirs(); writeBytes(ByteArray(5)) }
+        cacheFile()
         val vm = viewModel()
 
         assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
         assertThat(vm.state.value.modelFile).isEqualTo(cache.fileFor(uid))
         assertThat(downloader.calls).hasSize(0)
+    }
+
+    @Test
+    fun `a cached file with a corrupt header is evicted and reported instead of rendered`() = runTest {
+        cacheFile(ByteArray(40))
+        val vm = viewModel()
+
+        val state = vm.state.value
+        assertThat(state.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(state)).isEqualTo(R.string.error_corrupt_file)
+        assertThat(state.modelFile).isNull()
+        assertThat(cache.evicted).containsExactly(uid)
+        assertThat(cache.fileFor(uid).exists()).isFalse()
+        assertThat(downloader.calls).hasSize(0)
+    }
+
+    @Test
+    fun `a download with a corrupt header is evicted and reported instead of rendered`() = runTest {
+        downloader.bytes = ByteArray(40)
+        val vm = viewModel()
+
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_corrupt_file)
+        assertThat(cache.evicted).containsExactly(uid)
+        assertThat(cache.fileFor(uid).exists()).isFalse()
+    }
+
+    @Test
+    fun `a uid that cannot name a cache file fails without touching the network or the cache`() = runTest {
+        val vm = viewModel(uid = "../../etc/passwd")
+
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_file_not_found)
+        assertThat(vm.state.value.info).isNull() // metadata was never requested
+        assertThat(downloader.calls).isEmpty()
+        assertThat(cache.acquired).isEmpty()
+
+        clear(vm)
+        assertThat(cache.released).isEmpty()
     }
 
     @Test
@@ -153,6 +216,8 @@ class ViewerViewModelTest {
 
         assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
         assertThat(vm.state.value.error).isNull()
+        assertThat(cache.acquired).containsExactly(uid)
+        assertThat(cache.leases[uid]).isEqualTo(1)
     }
 
     @Test
@@ -173,6 +238,66 @@ class ViewerViewModelTest {
     }
 
     @Test
+    fun `an unreadable file reported by the renderer fails with the missing-file message`() = runTest {
+        val vm = viewModel()
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
+
+        vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.FileUnreadable))
+
+        val state = vm.state.value
+        assertThat(state.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(state)).isEqualTo(R.string.error_file_not_found)
+        assertThat(state.modelFile).isNull()
+        assertThat(cache.evicted).isEmpty()
+    }
+
+    @Test
+    fun `a parse failure evicts the file and retry downloads it again`() = runTest {
+        val vm = viewModel()
+        assertThat(downloader.calls).containsExactly(uid)
+
+        vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.ParseFailed))
+
+        val state = vm.state.value
+        assertThat(state.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(state)).isEqualTo(R.string.error_corrupt_file)
+        assertThat(cache.evicted).containsExactly(uid)
+        assertThat(cache.fileFor(uid).exists()).isFalse()
+
+        vm.onAction(ViewerAction.OnRetry)
+
+        assertThat(downloader.calls).containsExactly(uid, uid)
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
+        assertThat(vm.state.value.modelFile).isEqualTo(cache.fileFor(uid))
+        assertThat(cache.leases[uid]).isEqualTo(1)
+    }
+
+    @Test
+    fun `a renderer timeout is treated like a corrupt file`() = runTest {
+        val vm = viewModel()
+
+        vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.Timeout))
+
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_corrupt_file)
+        assertThat(cache.evicted).containsExactly(uid)
+    }
+
+    @Test
+    fun `OnModelLoadFailed only applies while loading into the scene`() = runTest {
+        val vm = viewModel()
+        vm.onAction(ViewerAction.OnModelLoaded)
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Ready)
+
+        vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.ParseFailed))
+
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Ready)
+        assertThat(vm.state.value.error).isNull()
+        assertThat(cache.evicted).isEmpty()
+        assertThat(cache.fileFor(uid).exists()).isTrue()
+    }
+
+    @Test
     fun `back and attribution actions emit navigation events`() = runTest {
         val vm = viewModel()
         vm.events.test {
@@ -185,14 +310,73 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun `closing the viewer evicts the temporary file`() = runTest {
+    fun `closing the viewer releases its lease and removes the temporary file`() = runTest {
         val cleanupScope = TestScope(testDispatcher)
         val vm = viewModel(cleanupScope)
         assertThat(cache.fileFor(uid).exists()).isTrue()
+        assertThat(cache.acquired).containsExactly(uid)
 
-        ViewModelStore().apply { put("viewer", vm) }.clear()
+        clear(vm)
 
-        assertThat(cache.evicted).containsExactly(uid)
-        assertThat(cache.fileFor(uid).exists()).isEqualTo(false)
+        assertThat(cache.released).containsExactly(uid)
+        assertThat(cache.leases[uid]).isNull()
+        assertThat(cache.fileFor(uid).exists()).isFalse()
+    }
+
+    @Test
+    fun `a file stays until the last viewer using it closes`() = runTest {
+        val first = viewModel()
+        val second = viewModel() // cache hit on the file the first one downloaded
+        assertThat(downloader.calls).containsExactly(uid)
+        assertThat(cache.leases[uid]).isEqualTo(2)
+
+        clear(first)
+        assertThat(cache.leases[uid]).isEqualTo(1)
+        assertThat(cache.fileFor(uid).exists()).isTrue()
+        assertThat(second.state.value.phase).isEqualTo(ViewerPhase.LoadingIntoScene)
+
+        clear(second)
+        assertThat(cache.leases[uid]).isNull()
+        assertThat(cache.fileFor(uid).exists()).isFalse()
+    }
+
+    @Test
+    fun `a viewer that never got past the budget gate still balances its lease`() = runTest {
+        dataSource.modelResult = Result.Success(model(uid, faceCount = 40_000))
+        val vm = viewModel()
+        assertThat(cache.leases[uid]).isEqualTo(1)
+
+        clear(vm)
+
+        assertThat(cache.released).containsExactly(uid)
+        assertThat(cache.leases).isEmpty()
     }
 }
+
+/**
+ * Scripted downloader for viewer tests: writes a well-formed glTF-Binary container by default
+ * (the ViewModel validates the header before rendering) and replays [progress] verbatim, which
+ * lets a test report an unknown total size.
+ */
+private class ScriptedGlbDownloader : GlbDownloader {
+    var result: Result<File, DataError>? = null
+    var bytes: ByteArray = validGlb()
+    var progress = listOf(DownloadProgress(25, 100), DownloadProgress(50, 100), DownloadProgress(100, 100))
+    val calls = mutableListOf<String>()
+
+    override suspend fun download(uid: String, destination: File, onProgress: (DownloadProgress) -> Unit): Result<File, DataError> {
+        calls += uid
+        progress.forEach(onProgress)
+        return result ?: run {
+            destination.parentFile?.mkdirs()
+            destination.writeBytes(bytes)
+            Result.Success(destination)
+        }
+    }
+}
+
+/** A minimal glTF-Binary container: valid header followed by [payloadBytes] zero bytes. */
+private fun validGlb(payloadBytes: Int = 100): ByteArray =
+    ByteBuffer.allocate(GlbHeader.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        .putInt(0x46546C67).putInt(2).putInt(GlbHeader.SIZE_BYTES + payloadBytes)
+        .array() + ByteArray(payloadBytes)

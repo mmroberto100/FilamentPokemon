@@ -7,8 +7,8 @@ data class ViewerState(
     val uid: String,
     val name: String,
     val phase: ViewerPhase = ViewerPhase.CheckingBudget,
-    /** 0f..1f while [ViewerPhase.Downloading]. */
-    val downloadProgress: Float = 0f,
+    /** 0f..1f while [ViewerPhase.Downloading]; `null` while the total size is unknown. */
+    val downloadProgress: Float? = null,
     /** Local `.glb` inside the cache dir once it is ready to be rendered. */
     val modelFile: File? = null,
     /** Fresh metadata for the attribution card; null until fetched. */

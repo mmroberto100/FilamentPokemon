@@ -1,5 +1,6 @@
 package com.mmunoz.filamentpokemon.viewer.presentation
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -42,11 +43,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import co.touchlab.kermit.Logger
 import com.mmunoz.filamentpokemon.R
 import com.mmunoz.filamentpokemon.core.presentation.util.ObserveAsEvents
 import com.mmunoz.filamentpokemon.core.presentation.util.UiText
 import com.mmunoz.filamentpokemon.ui.theme.FilamentPokemonTheme
 import org.koin.androidx.compose.koinViewModel
+
+private val log = Logger.withTag("ViewerScreen")
 
 @Composable
 fun ViewerRoot(
@@ -59,7 +63,11 @@ fun ViewerRoot(
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
             ViewerEvent.NavigateBack -> onNavigateBack()
-            is ViewerEvent.OpenUrl -> context.startActivity(Intent(Intent.ACTION_VIEW, event.url.toUri()))
+            is ViewerEvent.OpenUrl -> try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, event.url.toUri()))
+            } catch (e: ActivityNotFoundException) {
+                log.w(e) { "No activity can open ${event.url}" }
+            }
         }
     }
 
@@ -80,6 +88,7 @@ fun ViewerScreen(
             FilamentView(
                 modelFile = state.modelFile,
                 onModelLoaded = { onAction(ViewerAction.OnModelLoaded) },
+                onModelLoadFailed = { onAction(ViewerAction.OnModelLoadFailed(it)) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -97,7 +106,8 @@ fun ViewerScreen(
             )
 
             ViewerPhase.Downloading -> ProgressOverlay(
-                label = stringResource(R.string.viewer_downloading, (state.downloadProgress * 100).toInt()),
+                label = state.downloadProgress?.let { stringResource(R.string.viewer_downloading, (it * 100).toInt()) }
+                    ?: stringResource(R.string.viewer_downloading_indeterminate),
                 progress = state.downloadProgress,
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -264,6 +274,17 @@ private fun ViewerScreenDownloadingPreview() {
     FilamentPokemonTheme {
         ViewerScreen(
             state = ViewerState(uid = "x", name = "Pokemon Center", phase = ViewerPhase.Downloading, downloadProgress = 0.42f, info = previewInfo),
+            onAction = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ViewerScreenDownloadingIndeterminatePreview() {
+    FilamentPokemonTheme {
+        ViewerScreen(
+            state = ViewerState(uid = "x", name = "Pokemon Center", phase = ViewerPhase.Downloading, downloadProgress = null, info = previewInfo),
             onAction = {}
         )
     }
