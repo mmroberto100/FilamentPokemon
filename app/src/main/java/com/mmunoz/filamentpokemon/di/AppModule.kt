@@ -18,6 +18,9 @@ import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
 import com.mmunoz.filamentpokemon.viewer.domain.ModelCache
 import com.mmunoz.filamentpokemon.viewer.presentation.ViewerViewModel
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
@@ -25,8 +28,12 @@ import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 val UNAUTHENTICATED_HTTP_CLIENT = named("unauthenticated")
+val APPLICATION_SCOPE = named("application")
 
 val appModule = module {
+    /** Process-lifetime scope for work that must outlive the screen that started it (cache cleanup). */
+    single<CoroutineScope>(APPLICATION_SCOPE) { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+
     /** Authenticated client for api.sketchfab.com. */
     single<HttpClient> {
         HttpClientFactory.create(
@@ -63,5 +70,14 @@ val appModule = module {
     single<GlbDownloader> {
         KtorGlbDownloader(apiClient = get(), downloadClient = get(UNAUTHENTICATED_HTTP_CLIENT))
     }
-    viewModel { ViewerViewModel(get(), get(), get(), get(), get()) }
+    viewModel {
+        ViewerViewModel(
+            savedStateHandle = get(),
+            modelDataSource = get(),
+            downloader = get(),
+            cache = get(),
+            userPreferences = get(),
+            cleanupScope = get(APPLICATION_SCOPE)
+        )
+    }
 }

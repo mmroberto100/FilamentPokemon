@@ -24,6 +24,7 @@
     <!-- Viewer -->
     <string name="viewer_checking_budget">Checking triangle budget…</string>
     <string name="viewer_downloading">Downloading… %1$d%%</string>
+    <string name="viewer_downloading_indeterminate">Downloading…</string>
     <string name="viewer_loading_scene">Loading into scene…</string>
     <string name="viewer_by_author">by %1$s</string>
     <string name="viewer_faces">%1$s faces</string>
@@ -50,4 +51,7 @@
     <string name="error_over_polygon_budget">This model exceeds your triangle budget and was skipped to keep rendering smooth.</string>
     <string name="error_file_too_large">This model’s file is too large for mobile download.</string>
     <string name="error_no_glb_archive">Sketchfab doesn’t offer a .glb version of this model.</string>
+    <string name="error_corrupt_file">The model file is damaged or incomplete. Try downloading it again.</string>
+    <string name="error_preference_not_saved">Couldn’t save your triangle budget. It will reset next time you open the app.</string>
+    <string name="error_render_timeout">This model is taking too long to load on this device. Try again, or pick a lighter model.</string>
 </resources>

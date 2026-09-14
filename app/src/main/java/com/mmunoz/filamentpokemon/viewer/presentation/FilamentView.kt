@@ -15,21 +15,25 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.mmunoz.filamentpokemon.viewer.filament.FilamentModelRenderer
+import com.mmunoz.filamentpokemon.viewer.filament.ModelLoadError
 import java.io.File
 
 /**
  * Hosts a Filament [SurfaceView]. The renderer is created with the view, runs only while the
  * lifecycle is RESUMED, loads [modelFile] whenever it changes, and is torn down when the view
- * leaves the window (see [FilamentModelRenderer] for the destroy contract).
+ * leaves the window (see [FilamentModelRenderer] for the destroy contract). Every load ends in
+ * [onModelLoaded] or [onModelLoadFailed]; the renderer never throws into the composition.
  */
 @Composable
 fun FilamentView(
     modelFile: File?,
     modifier: Modifier = Modifier,
-    onModelLoaded: () -> Unit = {}
+    onModelLoaded: () -> Unit = {},
+    onModelLoadFailed: (ModelLoadError) -> Unit = {}
 ) {
     var renderer by remember { mutableStateOf<FilamentModelRenderer?>(null) }
     val currentOnModelLoaded by rememberUpdatedState(onModelLoaded)
+    val currentOnModelLoadFailed by rememberUpdatedState(onModelLoadFailed)
     val lifecycleOwner = LocalLifecycleOwner.current
 
     AndroidView(
@@ -37,6 +41,7 @@ fun FilamentView(
             SurfaceView(context).also { view ->
                 renderer = FilamentModelRenderer(view).also { created ->
                     created.onModelLoaded = { currentOnModelLoaded() }
+                    created.onModelLoadFailed = { error -> currentOnModelLoadFailed(error) }
                 }
             }
         },
@@ -60,8 +65,12 @@ fun FilamentView(
         }
     }
 
-    LaunchedEffect(modelFile, renderer) {
-        val r = renderer ?: return@LaunchedEffect
+    // Snapshot the renderer during composition: the factory assigns it before this effect's coroutine
+    // starts, so reading the state inside the body would load once for the null key and again for the
+    // real one.
+    val currentRenderer = renderer
+    LaunchedEffect(modelFile, currentRenderer) {
+        val r = currentRenderer ?: return@LaunchedEffect
         val file = modelFile ?: return@LaunchedEffect
         r.loadGlb(file)
     }

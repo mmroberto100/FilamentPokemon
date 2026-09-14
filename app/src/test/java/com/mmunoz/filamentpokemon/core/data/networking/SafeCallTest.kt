@@ -28,7 +28,8 @@ class SafeCallTest {
     private fun clientReturning(status: HttpStatusCode, body: String = "", token: String = "") =
         HttpClientFactory.create(
             engine = MockEngine { respond(body, status, jsonHeaders) },
-            apiToken = token
+            apiToken = token,
+            retryPolicy = RetryPolicy(maxRetries = 0)
         )
 
     @Test
