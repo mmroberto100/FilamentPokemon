@@ -140,8 +140,13 @@ class ViewerViewModel(
         }
     }
 
+    /**
+     * Accepted while the renderer owns a file: [ViewerPhase.LoadingIntoScene], and [ViewerPhase.Ready]
+     * because a recreated view reloads the retained file and that reload can fail too.
+     */
     private fun onModelLoadFailed(reason: ModelLoadError) {
-        if (_state.value.phase != ViewerPhase.LoadingIntoScene) return
+        val phase = _state.value.phase
+        if (phase != ViewerPhase.LoadingIntoScene && phase != ViewerPhase.Ready) return
         when (reason) {
             ModelLoadError.FileUnreadable -> fail(DataError.Local.NOT_FOUND)
             ModelLoadError.ParseFailed -> {

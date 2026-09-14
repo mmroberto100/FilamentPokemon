@@ -286,17 +286,30 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun `OnModelLoadFailed only applies while loading into the scene`() = runTest {
+    fun `a reload failure after the model was Ready still surfaces the error`() = runTest {
+        // A recreated view (rotation) reloads the retained file; a purged or damaged file must not be silent.
         val vm = viewModel()
         vm.onAction(ViewerAction.OnModelLoaded)
         assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Ready)
 
         vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.ParseFailed))
 
-        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Ready)
-        assertThat(vm.state.value.error).isNull()
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_corrupt_file)
+        assertThat(vm.state.value.modelFile).isNull()
+        assertThat(cache.evicted).containsExactly(uid)
+    }
+
+    @Test
+    fun `OnModelLoadFailed is ignored once the viewer has already failed`() = runTest {
+        downloader.result = Result.Error(DataError.Local.NO_GLB_ARCHIVE)
+        val vm = viewModel()
+        assertThat(vm.state.value.phase).isEqualTo(ViewerPhase.Failed)
+
+        vm.onAction(ViewerAction.OnModelLoadFailed(ModelLoadError.FileUnreadable))
+
+        assertThat(errorRes(vm.state.value)).isEqualTo(R.string.error_no_glb_archive)
         assertThat(cache.evicted).isEmpty()
-        assertThat(cache.fileFor(uid).exists()).isTrue()
     }
 
     @Test

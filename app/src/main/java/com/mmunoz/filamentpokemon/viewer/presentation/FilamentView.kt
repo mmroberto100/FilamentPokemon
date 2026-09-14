@@ -65,8 +65,12 @@ fun FilamentView(
         }
     }
 
-    LaunchedEffect(modelFile, renderer) {
-        val r = renderer ?: return@LaunchedEffect
+    // Snapshot the renderer during composition: the factory assigns it before this effect's coroutine
+    // starts, so reading the state inside the body would load once for the null key and again for the
+    // real one.
+    val currentRenderer = renderer
+    LaunchedEffect(modelFile, currentRenderer) {
+        val r = currentRenderer ?: return@LaunchedEffect
         val file = modelFile ?: return@LaunchedEffect
         r.loadGlb(file)
     }
