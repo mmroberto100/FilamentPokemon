@@ -85,7 +85,7 @@ class DataStoreUserPreferencesTest {
         File(tempDir, "dir.preferences_pb").mkdirs()
         val prefs = preferences("dir.preferences_pb")
 
-        assertThat(prefs.setMaxFaceCount(12_000)).isEqualTo(Result.Error(DataError.Local.UNKNOWN))
+        assertThat(prefs.setMaxFaceCount(12_000)).isEqualTo(Result.Error(DataError.Local.PREFERENCE_NOT_SAVED))
         assertThat(prefs.maxFaceCount.first()).isEqualTo(PolygonBudget.DEFAULT_MAX_FACES)
     }
 }

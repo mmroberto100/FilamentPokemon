@@ -24,5 +24,6 @@ fun DataError.toUiText(): UiText = when (this) {
     DataError.Local.FILE_TOO_LARGE -> UiText.StringResource(R.string.error_file_too_large)
     DataError.Local.NO_GLB_ARCHIVE -> UiText.StringResource(R.string.error_no_glb_archive)
     DataError.Local.CORRUPT_FILE -> UiText.StringResource(R.string.error_corrupt_file)
+    DataError.Local.PREFERENCE_NOT_SAVED -> UiText.StringResource(R.string.error_preference_not_saved)
     DataError.Local.UNKNOWN -> UiText.StringResource(R.string.error_unknown)
 }

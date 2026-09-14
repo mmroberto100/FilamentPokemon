@@ -21,9 +21,9 @@ import com.mmunoz.filamentpokemon.core.presentation.util.UiText
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource
 import com.mmunoz.filamentpokemon.search.domain.FakeSketchfabModelDataSource.Companion.model
 import com.mmunoz.filamentpokemon.viewer.domain.DownloadProgress
+import com.mmunoz.filamentpokemon.viewer.domain.FakeGlbDownloader
 import com.mmunoz.filamentpokemon.viewer.domain.FakeModelCache
-import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
-import com.mmunoz.filamentpokemon.viewer.domain.GlbHeader
+import com.mmunoz.filamentpokemon.viewer.domain.validGlb
 import com.mmunoz.filamentpokemon.viewer.filament.ModelLoadError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,8 +37,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ViewerViewModelTest {
@@ -48,7 +46,7 @@ class ViewerViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var dataSource: FakeSketchfabModelDataSource
-    private lateinit var downloader: ScriptedGlbDownloader
+    private lateinit var downloader: FakeGlbDownloader
     private lateinit var cache: FakeModelCache
     private lateinit var preferences: FakeUserPreferences
 
@@ -60,7 +58,7 @@ class ViewerViewModelTest {
         dataSource = FakeSketchfabModelDataSource().apply {
             modelResult = Result.Success(model(uid, faceCount = 10_000, name = "Pikachu"))
         }
-        downloader = ScriptedGlbDownloader()
+        downloader = FakeGlbDownloader()
         cache = FakeModelCache(tempDir)
         preferences = FakeUserPreferences(initial = 30_000)
     }
@@ -352,31 +350,3 @@ class ViewerViewModelTest {
         assertThat(cache.leases).isEmpty()
     }
 }
-
-/**
- * Scripted downloader for viewer tests: writes a well-formed glTF-Binary container by default
- * (the ViewModel validates the header before rendering) and replays [progress] verbatim, which
- * lets a test report an unknown total size.
- */
-private class ScriptedGlbDownloader : GlbDownloader {
-    var result: Result<File, DataError>? = null
-    var bytes: ByteArray = validGlb()
-    var progress = listOf(DownloadProgress(25, 100), DownloadProgress(50, 100), DownloadProgress(100, 100))
-    val calls = mutableListOf<String>()
-
-    override suspend fun download(uid: String, destination: File, onProgress: (DownloadProgress) -> Unit): Result<File, DataError> {
-        calls += uid
-        progress.forEach(onProgress)
-        return result ?: run {
-            destination.parentFile?.mkdirs()
-            destination.writeBytes(bytes)
-            Result.Success(destination)
-        }
-    }
-}
-
-/** A minimal glTF-Binary container: valid header followed by [payloadBytes] zero bytes. */
-private fun validGlb(payloadBytes: Int = 100): ByteArray =
-    ByteBuffer.allocate(GlbHeader.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(0x46546C67).putInt(2).putInt(GlbHeader.SIZE_BYTES + payloadBytes)
-        .array() + ByteArray(payloadBytes)

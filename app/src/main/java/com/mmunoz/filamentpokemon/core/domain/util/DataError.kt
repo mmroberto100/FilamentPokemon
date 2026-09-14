@@ -29,6 +29,8 @@ sealed interface DataError : Error {
         NO_GLB_ARCHIVE,
         /** The file on disk is not a complete glTF-Binary container (truncated, purged or not a .glb). */
         CORRUPT_FILE,
+        /** A user preference could not be persisted; the in-memory value still applies for this session. */
+        PREFERENCE_NOT_SAVED,
         UNKNOWN
     }
 }

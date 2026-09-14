@@ -307,7 +307,7 @@ class SearchViewModelTest {
         val vm = viewModel()
         advanceTimeBy(401)
         dataSource.searchCalls.clear()
-        userPreferences.writeError = DataError.Local.UNKNOWN
+        userPreferences.writeError = DataError.Local.PREFERENCE_NOT_SAVED
 
         vm.onAction(SearchAction.OnMaxFaceCountChange(10_000))
         vm.events.test {

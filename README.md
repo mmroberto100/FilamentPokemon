@@ -19,18 +19,25 @@ flowchart TD
     D --> E{"fitsBudget?"}
     E -- no --> Y["OVER_POLYGON_BUDGET, no download"]
     E -- yes --> F["Sketchfab Download API<br/>GET /v3/models/{uid}/download → signed .glb URL"]
-    F --> G["Temporary cache<br/>cacheDir/models/{uid}.glb, 150 MB LRU"]
-    G --> H["Filament gltfio<br/>ModelViewer.loadModelGlb"]
+    F --> G["Streamed download<br/>64 MB cap on the stream, glTF-Binary header check"]
+    G --> G2["Temporary cache<br/>cacheDir/models/{uid}.glb, 150 MB LRU, leased while a viewer uses it"]
+    G2 --> H["Filament gltfio<br/>ModelViewer.loadModelGlb"]
+    H -- unreadable / unparseable / stuck --> Z["Error overlay with Retry<br/>(corrupt files are evicted first)"]
     H --> I["SurfaceView, PBR frame loop<br/>IBL + skybox, FXAA, dynamic resolution"]
-    I -- viewer closed --> J["evict {uid}.glb"]
+    I -- last viewer closed --> J["evict {uid}.glb"]
 ```
 
 Search adds the mandatory `pokemon` term to whatever you type, requests only downloadable
 models sorted by likes (24 per page, cursor pagination), drops age-restricted entries and
 anything without a `.glb` archive. The viewer re-fetches the model's metadata, applies the
 budget gate, reuses a cached file or streams the download (progress shown), then hands the
-file to Filament. Sketchfab download links expire after about five minutes, so they are
-resolved fresh on every download and never stored.
+file to Filament. The downloader stops the stream the moment it passes 64 MB and rejects a
+truncated body; both it and the viewer check the 12-byte glTF-Binary header (`GlbHeader`)
+before any bytes reach the native parser, and a file the renderer cannot read or parse — or
+that never becomes resident within 20 s — surfaces as an error with Retry instead of a crash or
+an endless spinner. Sketchfab download links expire after about five minutes, so they are
+resolved fresh on every download and never stored. HTTP 429 and 5xx answers are retried up to
+three times with capped exponential backoff.
 
 ## Triangle budget
 

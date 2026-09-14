@@ -46,7 +46,7 @@ class DataStoreUserPreferences(
             Result.Success(Unit)
         } catch (e: IOException) {
             log.w(e) { "Failed to persist max face count" }
-            Result.Error(DataError.Local.UNKNOWN)
+            Result.Error(DataError.Local.PREFERENCE_NOT_SAVED)
         }
     }
 

@@ -6,6 +6,7 @@ import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
 import assertk.assertions.isNull
 import com.mmunoz.filamentpokemon.core.data.networking.HttpClientFactory
+import com.mmunoz.filamentpokemon.core.data.networking.RetryPolicy
 import com.mmunoz.filamentpokemon.core.domain.util.DataError
 import com.mmunoz.filamentpokemon.core.domain.util.Result
 import com.mmunoz.filamentpokemon.search.data.dto.ArchiveInfoDto
@@ -36,7 +37,8 @@ class KtorSketchfabModelDataSourceTest {
                     lastRequest = request
                     respond(body(), status, jsonHeaders)
                 },
-                apiToken = ""
+                apiToken = "",
+                retryPolicy = RetryPolicy(maxRetries = 0)
             )
         )
 
