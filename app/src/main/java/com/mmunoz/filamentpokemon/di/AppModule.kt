@@ -16,8 +16,10 @@ import com.mmunoz.filamentpokemon.viewer.data.KtorGlbDownloader
 import com.mmunoz.filamentpokemon.viewer.data.ModelCacheManager
 import com.mmunoz.filamentpokemon.viewer.domain.GlbDownloader
 import com.mmunoz.filamentpokemon.viewer.domain.ModelCache
+import com.mmunoz.filamentpokemon.viewer.presentation.ViewerViewModel
 import io.ktor.client.HttpClient
 import org.koin.android.ext.koin.androidContext
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
@@ -61,4 +63,5 @@ val appModule = module {
     single<GlbDownloader> {
         KtorGlbDownloader(apiClient = get(), downloadClient = get(UNAUTHENTICATED_HTTP_CLIENT))
     }
+    viewModel { ViewerViewModel(get(), get(), get(), get(), get()) }
 }
